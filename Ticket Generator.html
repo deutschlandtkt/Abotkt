@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<title>Ticket Links Generator (Folder → Table)</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    padding: 20px;
+    max-width: 900px;
+    margin: auto;
+  }
+  input, button {
+    padding: 8px;
+    font-size: 14px;
+    margin-bottom: 10px;
+  }
+  #results {
+    margin-top: 20px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    font-size: 14px;
+  }
+  th, td {
+    border: 1px solid #ccc;
+    padding: 6px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: #f0f0f0;
+  }
+  .small {
+    font-size: 12px;
+    word-break: break-all;
+  }
+  .small a {
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+    display: block;
+    max-width: 400px;
+  }
+</style>
+</head>
+<body>
+
+<h2>Ticket Links Generator (Folder → Table)</h2>
+
+<!-- Base URL up to repo (NO folder here, NO trailing slash) -->
+<label>GitHub Pages base URL (repo root, without folder):</label><br>
+<input type="text" id="baseRoot"
+       placeholder="https://USERNAME.github.io/REPO"
+       value="https://detuschbahn.github.io/Abotkt/"
+       style="width:100%;"><br><br>
+
+<!-- GitHub folder path where the files live -->
+<label>GitHub folder path (e.g. <code>dec25</code> or <code>tickets/dec25</code>):</label><br>
+<input type="text" id="folderPath"
+       placeholder="dec25"
+       value="dec25"
+       style="width:100%;"><br><br>
+
+<label>Select local folder containing the same HTML ticket files:</label><br>
+<input type="file" id="folderInput" webkitdirectory multiple><br><br>
+
+<button id="generateBtn">Generate Table</button>
+
+<div id="results"></div>
+
+<script>
+document.getElementById("generateBtn").addEventListener("click", () => {
+  const baseRootInput = document.getElementById("baseRoot").value.trim();
+  const folderPathInput = document.getElementById("folderPath").value.trim();
+  const files = Array.from(document.getElementById("folderInput").files || []);
+  const resultsDiv = document.getElementById("results");
+
+  if (!baseRootInput) {
+    resultsDiv.innerHTML = "<p>Please enter your GitHub Pages base URL.</p>";
+    return;
+  }
+
+  if (!files.length) {
+    resultsDiv.innerHTML = "<p>Please select the local folder containing your HTML ticket files.</p>";
+    return;
+  }
+
+  // Normalize base root: remove trailing slashes
+  const baseRoot = baseRootInput.replace(/\/+$/, "");
+
+  // Normalize folder path: trim slashes from both ends
+  let folderPath = folderPathInput.replace(/^\/+|\/+$/g, "");
+  // Allow empty folder (files directly under repo root)
+  const hasFolder = folderPath.length > 0;
+
+  // Filter only .html / .htm files
+  const htmlFiles = files.filter(f =>
+    f.name.toLowerCase().endsWith(".html") ||
+    f.name.toLowerCase().endsWith(".htm")
+  );
+
+  if (!htmlFiles.length) {
+    resultsDiv.innerHTML = "<p>No .html files found in the selected folder.</p>";
+    return;
+  }
+
+  resultsDiv.innerHTML = "<p>Processing " + htmlFiles.length + " files, please wait...</p>";
+
+  // Read all files
+  const readers = htmlFiles.map(file => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const html = e.target.result;
+        resolve({ file, html });
+      };
+      reader.onerror = () => {
+        resolve({ file, html: null });
+      };
+      reader.readAsText(file, "UTF-8");
+    });
+  });
+
+  Promise.all(readers).then(items => {
+    const parser = new DOMParser();
+    let tableHtml = `
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Ticket holder</th>
+            <th>File name</th>
+            <th>Final GitHub URL</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+
+    let index = 1;
+
+    items.forEach(({ file, html }) => {
+      let holderName = "";
+      if (html) {
+        const doc = parser.parseFromString(html, "text/html");
+        const title = (doc.querySelector("title") || {}).textContent || "";
+        if (title) {
+          // Example: "Deutschland Ticket - HELMI AHMED"
+          const dashIndex = title.lastIndexOf("-");
+          if (dashIndex !== -1) {
+            holderName = title.slice(dashIndex + 1).trim();
+          } else {
+            holderName = title.trim();
+          }
+        }
+      }
+
+      if (!holderName) {
+        holderName = file.name;
+      }
+
+      // Build GitHub URL: baseRoot + / + folderPath + / + filename
+      // Encode filename for URL safety (spaces, etc.)
+      const encodedFileName = encodeURIComponent(file.name);
+      let url = baseRoot;
+      if (hasFolder) {
+        url += "/" + folderPath;
+      }
+      url += "/" + encodedFileName;
+
+      tableHtml += `
+        <tr>
+          <td>${index++}</td>
+          <td>${holderName}</td>
+          <td>${file.name}</td>
+          <td class="small"><a href="${url}" target="_blank">${url}</a></td>
+        </tr>
+      `;
+    });
+
+    tableHtml += "</tbody></table>";
+    resultsDiv.innerHTML = tableHtml;
+  });
+});
+</script>
+
+</body>
+</html>
